@@ -1,0 +1,1 @@
+"..\HAEDWARE\soft_timer\soft_timer.c" LARGE OPTIMIZE (8,SPEED) BROWSE INCDIR(..\HAEDWARE\soft_timer;..\HAEDWARE\uart_Ringbuf) DEBUG OBJECTEXTEND PRINT(.\Listings\soft_timer.lst) OBJECT(.\Objects\soft_timer.obj)

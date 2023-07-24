@@ -1,0 +1,8 @@
+".\Objects\STARTUP.obj",
+".\Objects\main.obj",
+".\Objects\soft_timer.obj",
+".\Objects\uart_Ringbuf.obj" 
+TO ".\Objects\Pro" 
+PRINT(".\Listings\Pro.m51") RAMSIZE(256) 
+CODE( 0X0000-0X3FFF )
+XDATA( 0X0000-0X02FF )

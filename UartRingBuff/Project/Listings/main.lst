@@ -1,0 +1,740 @@
+C51 COMPILER V9.60.7.0   MAIN                                                              07/22/2023 17:30:50 PAGE 1   
+
+
+C51 COMPILER V9.60.7.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Objects\main.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE ..\user\main.c LARGE OPTIMIZE(8,SPEED) BROWSE INCDIR(..\HAEDWARE\soft_ti
+                    -mer;..\HAEDWARE\uart) DEBUG OBJECTEXTEND PRINT(.\Listings\main.lst) OBJECT(.\Objects\main.obj)
+
+line level    source
+
+   1          #define ALLOCATE_EXTERN
+   2          
+   3          #include "HC89S003AF4.h"
+   4          #include "soft_timer.h"
+   5          #include <stdarg.h>
+   6          #include <stdio.h>
+   7          #include <string.h>
+   8          #include "uart.h"
+   9          
+  10          #define VDD 4.0                   // ADC²Î¿¼µçÑ¹
+  11          #define UART1BUFLEN 100           //´®¿Ú·¢ËÍ»º´æÇø³¤¶È
+  12          #define VolCoeFlashAddress 0x3B00 //µçÑ¹ÏµÊý´æ´¢µÄFlashµØÖ·
+  13          
+  14          RingBuff_t ringBuff;//´´½¨Ò»¸öringBuffµÄ»º³åÇø
+  15          
+  16          /************************************ º¯ÊýÉêÃ÷ *****************************************/
+  17          void Delay_2us(unsigned int fui_i); // ÑÓÊ±º¯Êý
+  18          // char putchar(char guc_Uartbuf);      // printfÖØ¶¨Ïò
+  19          
+  20          // ÏµÍ³³õÊ¼»¯
+  21          void SystemInit(void);
+  22          
+  23          void IOInitPushpull(unsigned char IOPPx, unsigned char IOPPXx);
+  24          
+  25          // ´®¿Ú
+  26          void usart1_timeover_proc(void);
+  27          
+  28          // FLASH
+  29          void FLASH_WriteData(unsigned char fuc_SaveData, unsigned int fui_Address);
+  30          void Flash_WriteArr(unsigned int fui_Address, unsigned char fuc_Length,unsigned char *fucp_SaveArr);
+  31          void Flash_ReadArr(unsigned int fui_Address, unsigned char fuc_Length,unsigned char *fucp_SaveArr);
+  32          void Flash_EraseBlock(unsigned int fui_Address);
+  33          
+  34          /************************************ ±äÁ¿¶¨Òå *****************************************/
+  35          // ADC
+  36          unsigned int gui_AdcValue_a[4] = {0x00};
+  37          unsigned char guc_AdcChannel_a[4] = {0x00, 0x02, 0x04, 0x06}; // ADCÍ¨µÀºÅ
+  38          unsigned char guc_Channel_Count = 0,
+  39                        guc_Count = 0; // guc_Channel_Count - Í¨µÀ guc_Count - ´ÎÊý
+  40          
+  41          // ´®¿Ú
+  42          struct soft_timer usart1_timer;
+  43          unsigned char guc_Uartbuf_p[UART1BUFLEN] = 0; // ÓÃÓÚ´æ·Å´®¿Ú·¢ËÍµÄÊý¾Ý
+  44          UartRec_Struct Uart1_rec;
+  45          
+  46          // µçÑ¹ÏµÊý
+  47          float VolCoe[4] = 0; // µçÑ¹ÏµÊý
+  48          FLOAT Vol_a, Vol_b;
+  49          
+  50          // FLASH
+  51          unsigned char VolCoeStore[16] = 0; // µçÑ¹ÏµÊý»º´æÇø
+  52          
+  53          // PWM
+  54          unsigned int PWMOutCycle = 1000,
+C51 COMPILER V9.60.7.0   MAIN                                                              07/22/2023 17:30:50 PAGE 2   
+
+  55                       PWMWorkTime = 500; // PWMOutCycle - PWMÊä³öÖÜÆÚ   PWMWorkTime - ¹¤×÷Ê±¼ä
+  56          unsigned int PWMOut_count = 0; // PWMOut_count - PWMÊä³öÊ±¼ä¼ÆÊý
+  57          
+  58          // Ö¸¶¨²¨ÐÎ
+  59          const unsigned char SpecifywaveformOut[14] = {1, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 0, 1, 1
+  60                                                       }; // Ö¸¶¨²¨ÐÎ
+  61          unsigned char SpecifywaveCount = 0; // Ö¸¶¨²¨ÐÎÊä³ö¼ÆÊý
+  62          unsigned char SpecifywaveIOflag = 0; // Ö¸¶¨²¨ÐÎÊä³ö¹Ü½Å±êÖ¾ 0-P01  1-P05  2-P07
+  63          /***************************************************************************************
+  64            * @ÊµÏÖÐ§¹û   ½×¶ÎÈý
+  65          ¶¨Ê±Æ÷0£º 1ms
+  66          ¶¨Ê±Æ÷1:  25ms
+  67          
+  68          ADCÍ¨µÀ£º
+  69          AN0 - P00
+  70          AN2 - P02
+  71          AN4 - P04
+  72          AN6 - P06
+  73          
+  74          ´®¿Ú£º
+  75          RXD - P21
+  76          TXD - P03
+  77          
+  78          PWM:
+  79          PWM0  - P20 P22 P23 P24 P25 P26 P27
+  80          
+  81          Ö¸¶¨²¨ÐÎ:
+  82          P01 P05 P07
+  83          ***************************************************************************************/
+  84          void main() {
+  85   1          float UARTprintVolCoe = 0;           // µçÑ¹»º´æÇø
+  86   1          unsigned char IOPPx = 0, IOPPXx = 0; // IOPPx - ÍÆÍêÊä³ö¹Ü½ÅÊÇPx×é£¬IOPPXx -
+  87   1          // ÍÆÍêÊä³ö¹Ü½ÅÊÇPX×éµÄx¹Ü½Å
+  88   1          unsigned int PWMCycle = 0,PWMDutycycle = 0; // PWMCycle - ´æ·ÅPWM²¨µÄÖÜÆÚ  PWMDutycycle -
+  89   1          // ´æ·ÅPWMÕ¼¿Õ±ÈµÄ¾ßÌåÊýÖµ
+  90   1          unsigned long int PWMFrequency = 0; // PWMÆµÂÊ
+  91   1          unsigned char ANx = 0;
+  92   1          unsigned char i; // ¼ÆÊý×¨ÓÃ
+  93   1      
+  94   1          SystemInit();
+  95   1          
+  96   1      
+  97   1          // ¶ÁÈ¡FlashÖÐµÄ¸÷Í¨µÀµçÑ¹ÏµÊý
+  98   1          Flash_ReadArr(VolCoeFlashAddress, 16, VolCoeStore);
+  99   1          for (i = 0; i < 4; i++) {
+ 100   2              memcpy(Vol_b.stByte.u8Byte, &VolCoeStore[i * 4], 4);
+ 101   2              VolCoe[i] = Vol_b.all;
+ 102   2          }
+ 103   1      
+ 104   1          // ´®¿Ú³¬Ê±ÅÐ¶Ï
+ 105   1          soft_timer_list_reset();
+ 106   1          add_timer(&usart1_timer, usart1_timeover_proc, 50); // 50MS
+ 107   1          start_timer(&usart1_timer);
+ 108   1      
+ 109   1          // Çå¿Õ´®¿Ú½ÓÊÕ»º´æ
+ 110   1          memcpy(Uart1_rec.guc_Uartbuf_a, 0, 20);
+ 111   1      
+ 112   1          RingBuff_Init(&ringBuff);
+ 113   1          ringBuff.FlagByte |= 0x01; //´®¿Ú¿ÕÏÐ
+ 114   1          memcpy(ringBuff.Ring_data, 0, RINGBUFF_LEN);
+ 115   1          
+ 116   1          
+C51 COMPILER V9.60.7.0   MAIN                                                              07/22/2023 17:30:50 PAGE 3   
+
+ 117   1          
+ 118   1          while (1) 
+ 119   1          {
+ 120   2              WDTC |= 0x10; // Çå¹·
+ 121   2      
+ 122   2              if (Uart1_rec.guc_Uartflag) 
+ 123   2              {
+ 124   3                  memcpy(guc_Uartbuf_p, 0, UART1BUFLEN);
+ 125   3                  // ¹¦ÄÜÑ¡Ôñ
+ 126   3                  switch (Uart1_rec.guc_Uartbuf_a[0]) 
+ 127   3                  {
+ 128   4                      /*********************** 1 ²éÑ¯Í¨µÀµçÑ¹ ***********************/
+ 129   4                      // ¹Ü½Å: P00 P02 P04 P06
+ 130   4                      // »º´æÇøÊý¾Ý£º0x01£¬Í¨µÀÑ¡Ôñ£¨1¸ö×Ö½Ú£©
+ 131   4                      case 0x01:
+ 132   4                          if (Uart1_rec.guc_Uartbuf_a[1] > 6 || Uart1_rec.guc_Uartbuf_a[1] % 2 == 1) 
+ 133   4                          {
+ 134   5                              sprintf(guc_Uartbuf_p, "¸ÃÍ¨µÀ²»´æÔÚ£¡\r\n");
+ 135   5                              break;
+ 136   5                          }
+ 137   4                          ANx = (int)Uart1_rec.guc_Uartbuf_a[1] / 2;
+ 138   4                          UARTprintVolCoe = (float)(gui_AdcValue_a[ANx] / 4096.0) * VDD * VolCoe[ANx];
+ 139   4                          sprintf(guc_Uartbuf_p, "AN%d = %f\r\n", (int)Uart1_rec.guc_Uartbuf_a[1], UARTprintVolC
+             -oe);
+ 140   4                          break;
+ 141   4      
+ 142   4                      /*********************** 2 ÐÞ¸ÄÖ¸¶¨Í¨µÀµçÑ¹²ÎÊý ***********************/
+ 143   4                      // ¹Ü½Å: P00 P02 P04 P06
+ 144   4                      // »º´æÇøÊý¾Ý£º0x02£¬Í¨µÀÑ¡Ôñ£¨1¸ö×Ö½Ú£©£¬µçÑ¹ÏµÊý£¨4¸ö×Ö½Ú£¬float£©
+ 145   4                      case 0x02:
+ 146   4                          if (Uart1_rec.guc_Uartbuf_a[1] == 0x00 ||
+ 147   4                              Uart1_rec.guc_Uartbuf_a[1] == 0x02 ||
+ 148   4                              Uart1_rec.guc_Uartbuf_a[1] == 0x04 ||
+ 149   4                              Uart1_rec.guc_Uartbuf_a[1] == 0x06) 
+ 150   4                          {
+ 151   5                              memcpy(Vol_a.stByte.u8Byte, &Uart1_rec.guc_Uartbuf_a[2], 4);
+ 152   5                              VolCoe[(int)Uart1_rec.guc_Uartbuf_a[1] / 2] = Vol_a.all;
+ 153   5      
+ 154   5                              for (i = 0; i < 4; i++) {
+ 155   6                                  Vol_b.all = VolCoe[i];
+ 156   6                                  memcpy(&VolCoeStore[i * 4], Vol_b.stByte.u8Byte, 4);
+ 157   6                              }
+ 158   5                              Flash_EraseBlock(VolCoeFlashAddress); // ²Á³ýµØÖ·0x3B00ËùÔÚÉÈÇø
+ 159   5                              Flash_WriteArr(VolCoeFlashAddress, 16,VolCoeStore); // ÔÚµØÖ·0x3B00Ð´ÈëÊý¾Ý
+ 160   5                              sprintf(guc_Uartbuf_p, "ok!\r\nVolCoe: %f - %f - %f - %f\r\n",VolCoe[0], VolCoe[1]
+             -, VolCoe[2], VolCoe[3]);
+ 161   5                          } 
+ 162   4                          else 
+ 163   4                          {
+ 164   5                              sprintf(guc_Uartbuf_p, "ÉèÖÃ´íÎó!\r\n");
+ 165   5                          }
+ 166   4                          break;
+ 167   4      
+ 168   4                      /*********************** 3 Ö¸¶¨PWM²¨ÊµÏÖ¹Ü½Å£¬ÆµÂÊºÍÕ¼¿Õ±È ************************/
+ 169   4                      // ¹Ü½Å: P20 P22 P23 P24 P25 P26 P27    ÆµÂÊ£º489 - 2M   Õ¼¿Õ±È£º0 - 100
+ 170   4                      // »º´æÇøÊý¾Ý£º0x03£¬¹Ü½ÅÑ¡Ôñ£¨1¸ö×Ö½Ú£©£¬ÆµÂÊ£¨3¸ö×Ö½Ú£©£¬Õ¼¿Õ±È£¨1¸ö×Ö½Ú£©
+ 171   4                      case 0x03:
+ 172   4                          // ÅÐ¶Ï¹Ü½ÅÑ¡ÔñÊý¾ÝÊÇ·ñ·ûºÏÌõ¼þ
+ 173   4                          if (Uart1_rec.guc_Uartbuf_a[1] == 0x20 ||
+ 174   4                              Uart1_rec.guc_Uartbuf_a[1] == 0x22 ||
+ 175   4                              Uart1_rec.guc_Uartbuf_a[1] == 0x23 ||
+ 176   4                              Uart1_rec.guc_Uartbuf_a[1] == 0x24 ||
+C51 COMPILER V9.60.7.0   MAIN                                                              07/22/2023 17:30:50 PAGE 4   
+
+ 177   4                              Uart1_rec.guc_Uartbuf_a[1] == 0x25 ||
+ 178   4                              Uart1_rec.guc_Uartbuf_a[1] == 0x26 ||
+ 179   4                              Uart1_rec.guc_Uartbuf_a[1] == 0x27) 
+ 180   4                          {
+ 181   5                              IOPPx = (Uart1_rec.guc_Uartbuf_a[1] >> 4) & 0x03;
+ 182   5                              IOPPXx = Uart1_rec.guc_Uartbuf_a[1] & 0x07;
+ 183   5      
+ 184   5                              // ÆµÂÊÊÇ·ñ³¬¹ýÏÞÖÆ
+ 185   5                              PWMFrequency = (Uart1_rec.guc_Uartbuf_a[2] * 65536 + Uart1_rec.guc_Uartbuf_a[3] * 
+             -256 + Uart1_rec.guc_Uartbuf_a[4]);
+ 186   5                              if (PWMFrequency < 489) {
+ 187   6                                  sprintf(guc_Uartbuf_p, "PWM ÆµÂÊÌ«Ð¡\r\n");
+ 188   6                                  break;
+ 189   6                              }
+ 190   5      
+ 191   5                              if (PWMFrequency > 2000000) {
+ 192   6                                  sprintf(guc_Uartbuf_p, "PWM ÆµÂÊÌ«´ó\r\n");
+ 193   6                                  break;
+ 194   6                              }
+ 195   5      
+ 196   5                              // Õ¼¿Õ±ÈÊÇ·ñ³¬¹ýÏÞÖÆ
+ 197   5                              if ((int)Uart1_rec.guc_Uartbuf_a[5] > 100) {
+ 198   6                                  sprintf(guc_Uartbuf_p, "PWM Õ¼¿Õ±ÈÌ«´ó\r\n");
+ 199   6                                  break;
+ 200   6                              }
+ 201   5      
+ 202   5                              // ÅäÖÃIOÎªÍÆÍêÊä³ö
+ 203   5                              IOInitPushpull(IOPPx, IOPPXx);
+ 204   5      
+ 205   5                              // PWMÊä³ö¹Ü½ÅÖØÓ³Éä
+ 206   5                              PWM0_MAP = Uart1_rec.guc_Uartbuf_a[1];
+ 207   5      
+ 208   5                              // ÆµÂÊÉèÖÃ£¨ÖÜÆÚ£©
+ 209   5                              PWMCycle = 2000000 / PWMFrequency;
+ 210   5                              PWM0PH = (PWMCycle >> 8) & 0xff;
+ 211   5                              PWM0PL = PWMCycle & 0xff;
+ 212   5      
+ 213   5                              // Õ¼¿Õ±ÈÉèÖÃ
+ 214   5                              PWMDutycycle = (unsigned int)(PWMCycle * (float)Uart1_rec.guc_Uartbuf_a[5] / 100.0
+             -);
+ 215   5                              PWM0DH = (PWMDutycycle >> 8) & 0x0f;
+ 216   5                              PWM0DL = (PWMDutycycle)&0xff;
+ 217   5      
+ 218   5                              sprintf(guc_Uartbuf_p,"PWM²¨ÉèÖÃ³É¹¦,IO:P%d%d, ÆµÂÊ:%ld, Õ¼¿Õ±È:%u%%\r\n", (int)IO
+             -PPx,(int)IOPPXx, (long int)PWMFrequency,(unsigned int)Uart1_rec.guc_Uartbuf_a[5]);
+ 219   5                          }
+ 220   4                          else
+ 221   4                          {
+ 222   5                              sprintf(guc_Uartbuf_p, "Ö¸¶¨PWMÊä³ö¹Ü½Å´íÎó!\r\n");
+ 223   5                          }
+ 224   4                          break;
+ 225   4      
+ 226   4                      /*********************** 4 Ö¸¶¨PWMÊä³öÖÜÆÚºÍ¹¤×÷Ê±¼ä ************************/
+ 227   4                      // »º´æÇøÊý¾Ý£º0x04£¬²úÉúÖÜÆÚ£¨2¸ö×Ö½Ú£©£¬¹¤×÷Ê±¼ä£¨2¸ö×Ö½Ú£©
+ 228   4                      case 0x04:
+ 229   4                          // Êä³öÖÜÆÚ ms
+ 230   4                          PWMOutCycle = Uart1_rec.guc_Uartbuf_a[1] * 256 + Uart1_rec.guc_Uartbuf_a[2];
+ 231   4                          PWMWorkTime = Uart1_rec.guc_Uartbuf_a[3] * 256 + Uart1_rec.guc_Uartbuf_a[4];
+ 232   4                          sprintf(guc_Uartbuf_p, "PWM¹¤×÷ÖÜÆÚ = %dms   ¹¤×÷Ê±¼ä = %dms\r\n", PWMOutCycle, PWMWor
+             -kTime);
+ 233   4                          break;
+ 234   4      
+C51 COMPILER V9.60.7.0   MAIN                                                              07/22/2023 17:30:50 PAGE 5   
+
+ 235   4                      /*********************** 5 Êä³öÖ¸¶¨²¨ÐÎ P01 P05 P07 ************************/
+ 236   4                      // ¹Ü½Å: P01 P05 P07
+ 237   4                      // »º´æÇøÊý¾Ý£º0x05£¬¹Ü½ÅÑ¡Ôñ£¨1¸ö×Ö½Ú£©  //fixme ÎªÊ²Ã´Ê¹ÓÃPWMÊµÏÖÖ¸¶¨²¨ÐÎ£¿100msµÄÖÜÆÚÈç
+             -ºÎÊµÏÖµÄ£¿
+ 238   4                      case 0x05:
+ 239   4                          IOPPx = (Uart1_rec.guc_Uartbuf_a[1] >> 4) & 0x03;
+ 240   4                          IOPPXx = Uart1_rec.guc_Uartbuf_a[1] & 0x07;
+ 241   4      
+ 242   4                          if (IOPPx != 0) {
+ 243   5                              sprintf(guc_Uartbuf_p, "Ö¸¶¨²¨ÐÎÊä³ö¹Ü½Å´íÎó!\r\n");
+ 244   5                              break;
+ 245   5                          }
+ 246   4      
+ 247   4                          if (IOPPXx != 0x01 && IOPPXx != 0x05 && IOPPXx != 0x07) {
+ 248   5                              sprintf(guc_Uartbuf_p, "Ö¸¶¨²¨ÐÎÊä³ö¹Ü½Å´íÎó!\r\n");
+ 249   5                              break;
+ 250   5                          }
+ 251   4      
+ 252   4                          // ÅäÖÃIOÎªÍÆÍêÊä³ö P01 P05 P07
+ 253   4                          IOInitPushpull(IOPPx, IOPPXx);
+ 254   4                          SpecifywaveCount = 0;
+ 255   4      
+ 256   4                          sprintf(guc_Uartbuf_p, "ÉèÖÃÖ¸¶¨²¨ÐÎÊä³ö¹Ü½ÅÎª:P%d%d\r\n", (int)IOPPx, (int)IOPPXx);
+ 257   4                          break;
+ 258   4      
+ 259   4                      default:
+ 260   4                          sprintf(guc_Uartbuf_p, "Ö¸Áî´íÎó!\r\n");
+ 261   4                          break;
+ 262   4                  }
+ 263   3      
+ 264   3                  // Çå¿Õ´®¿Ú½ÓÊÕ»º´æ
+ 265   3                  memcpy(Uart1_rec.guc_Uartbuf_a, 0, 20);
+ 266   3      
+ 267   3                  // ½ÓÊÕÏÂÒ»Ö¡Êý¾Ý
+ 268   3                  Uart1_rec.guc_Uartflag = 0;
+ 269   3                  Uart1_rec.guc_Uartcnt = 0;
+ 270   3                  
+ 271   3                  WriteStr_RingBuff(guc_Uartbuf_p,&ringBuff);
+ 272   3                  /* ´®¿Ú·¢ËÍ */
+ 273   3                  if (ringBuff.FlagByte & 0x01) 
+ 274   3                  {
+ 275   4                      ringBuff.FlagByte &= ~0x01;  //´®¿ÚÃ¦
+ 276   4                      TI = 1;
+ 277   4                  }
+ 278   3              }
+ 279   2      
+ 280   2              
+ 281   2          }
+ 282   1      }
+ 283          
+ 284          /***************************************************************************************
+ 285           * @ËµÃ÷        ³õÊ¼»¯ËùÓÐÍâÉè
+ 286           *      @²ÎÊý     ÎÞ
+ 287           * @·µ»ØÖµ ÎÞ
+ 288           * @×¢            ÎÞ
+ 289           ***************************************************************************************/
+ 290          
+ 291          void SystemInit(void) 
+ 292          {
+ 293   1          /************************************ ÏµÍ³³õÊ¼»¯
+ 294   1           * ****************************************/
+ 295   1          //    WDTCCR = 0x00;                                                //¹Ø±Õ¿´ÃÅ¹·
+C51 COMPILER V9.60.7.0   MAIN                                                              07/22/2023 17:30:50 PAGE 6   
+
+ 296   1          CLKSWR = 0x51; // Ñ¡ÔñÄÚ²¿¸ßÆµRCÎªÏµÍ³Ê±ÖÓ£¬ÄÚ²¿¸ßÆµRC 2·ÖÆµ£¬Fosc=16MHz
+ 297   1          CLKDIV = 0x01; // Fosc 1·ÖÆµµÃµ½Fcpu£¬Fcpu=16MHz
+ 298   1      
+ 299   1          /********************************** ´®¿Ú1³õÊ¼»¯
+ 300   1           * **************************************/
+ 301   1          P2M0 = P2M0 & 0x0F | 0x80; // P21ÉèÖÃÎªÍÆÍìÊä³ö
+ 302   1          P0M1 = P0M1 & 0x0F | 0x20; // P03ÉèÖÃÎªÉÏÀ­ÊäÈë
+ 303   1      
+ 304   1          TXD_MAP = 0x21; // TXDÓ³ÉäP21
+ 305   1          RXD_MAP = 0x03; // RXDÓ³ÉäP03
+ 306   1      
+ 307   1          BRTSEL = 0X00; // UART1µÄ²¨ÌØÂÊ:00 T4
+ 308   1          T4CON = 0x06;  // T4¹¤×÷Ä£Ê½£ºUART1²¨ÌØÂÊ·¢ÉúÆ÷
+ 309   1      
+ 310   1          TH4 = 0xFF;
+ 311   1          TL4 = 0x98;   // ²¨ÌØÂÊ9600
+ 312   1          SCON2 = 0x02; // 8Î»UART£¬²¨ÌØÂÊ¿É±ä
+ 313   1      
+ 314   1          SCON = 0x10; // ÔÊÐí´®ÐÐ½ÓÊÕ
+ 315   1          IE |= 0X10;  // Ê¹ÄÜ´®¿ÚÖÐ¶Ï
+ 316   1      
+ 317   1          EA = 1; // ´ò¿ª×ÜÖÐ¶Ï
+ 318   1      
+ 319   1          /************************************ TIM0ÅäÖÃ³õÊ¼»¯ 1ms
+ 320   1           * *****************************************/
+ 321   1          TCON1 = 0x00; // Tx0¶¨Ê±Æ÷Ê±ÖÓÎªFosc
+ 322   1          TMOD = 0x00;  // 16Î»ÖØ×°ÔØ¶¨Ê±Æ÷/¼ÆÊýÆ÷
+ 323   1      
+ 324   1          TH0 = 0xFA;
+ 325   1          TL0 = 0xCB;   // T0¶¨Ê±Ê±¼ä1ms
+ 326   1          IE |= 0x02;   // ´ò¿ªT0ÖÐ¶Ï
+ 327   1          TCON |= 0x10; // Ê¹ÄÜT0
+ 328   1      
+ 329   1          /********************************** TIM1ÅäÖÃ³õÊ¼»¯ 25ms
+ 330   1           * **************************************/
+ 331   1          TCON1 = 0x00; // T1¶¨Ê±Æ÷Ê±ÖÓÎªFosc  Timer·ÖÆµÏµÊý = 12
+ 332   1          TMOD = 0x00;  // 16Î»ÖØ×°ÔØ¶¨Ê±Æ÷/¼ÆÊýÆ÷
+ 333   1          TH1 = 0x7d;
+ 334   1          TL1 = 0xca;
+ 335   1          IE |= 0x08;   // ´ò¿ªT1ÖÐ¶Ï
+ 336   1          TCON |= 0x40; // Ê¹ÄÜT1
+ 337   1      
+ 338   1          /************************************ADC³õÊ¼»¯*****************************************/
+ 339   1          P0M0 = P0M0 & 0xF0 | 0x03; // P00ÉèÖÃÎªÄ£ÄâÊäÈë
+ 340   1          P0M1 = P0M1 & 0xF0 | 0x03; // P02ÉèÖÃÎªÄ£ÄâÊäÈë
+ 341   1          P0M2 = P0M2 & 0xF0 | 0x03; // P04ÉèÖÃÎªÄ£ÄâÊäÈë
+ 342   1          P0M3 = P0M3 & 0xF0 | 0x03; // P06ÉèÖÃÎªÄ£ÄâÊäÈë
+ 343   1      
+ 344   1          ADCC0 = 0x81;  // ´ò¿ªADC×ª»»µçÔ´
+ 345   1          Delay_2us(10); // ÑÓÊ±20us£¬È·±£ADCÏµÍ³ÎÈ¶¨
+ 346   1          ADCC1 = 0x00;  // Ñ¡ÔñÍâ²¿Í¨µÀ0
+ 347   1          ADCC2 = 0x4D; // ×ª»»½á¹û12Î»Êý¾Ý£¬Êý¾ÝÓÒ¶ÔÆë£¬ADCÊ±ÖÓ16·ÖÆµ Fadc = 1MHz
+ 348   1      
+ 349   1          IP3 |= 0x0C; // ADCÓÅÏÈ¼¶µ÷ÖÆ×î¸ß
+ 350   1          IE1 |= 0x20; // ´ò¿ªADCÖÐ¶Ï
+ 351   1          EA = 1;
+ 352   1      
+ 353   1          ADCC0 &= ~0x20; // Çå³ýADCÖÐ¶Ï±êÖ¾Î»
+ 354   1          //    ADCC0 |= 0x40;   // Æô¶¯ADC×ª»»
+ 355   1      
+ 356   1          /********************************** FlashÅäÖÃ³õÊ¼»¯
+ 357   1           * *************************************/
+C51 COMPILER V9.60.7.0   MAIN                                                              07/22/2023 17:30:50 PAGE 7   
+
+ 358   1          FREQ_CLK = 0x10; // Ö¸Ã÷µ±Ç°ÏµÍ³Ê±ÖÓ
+ 359   1      
+ 360   1          /*********************************** WDTÅäÖÃ³õÊ¼»¯
+ 361   1           * **************************************/
+ 362   1          WDTC = 0x57; // ÔÊÐíWDT¸´Î»£¬ÔÊÐíµôµç/¿ÕÏÐÄ£Ê½ÏÂÔËÐÐ£¬1024·ÖÆµ 5.93s
+ 363   1          WDTCCR = 0xFF; // Ð´Èë00Ê±£¬½«¹Ø±ÕWDT¹¦ÄÜ£¨µ«²»¹Ø±ÕÄÚ²¿µÍÆµRC£©£¬
+ 364   1      
+ 365   1          /************************************* PWM³õÊ¼»¯
+ 366   1           * ****************************************/
+ 367   1          // ÆµÂÊÉèÖÃ·¶Î§£º489 - 2 000 000
+ 368   1      
+ 369   1          P2M1 = P2M1 & 0xF0 | 0x08; // P22ÉèÖÃÎªÍÆÍìÊä³ö
+ 370   1          PWM0_MAP = 0x22;           // PWM0Í¨µÀÓ³ÉäP22¿Ú
+ 371   1          PWM0C = 0x01;              // PWM0¸ßÓÐÐ§£¬PWM01¸ßÓÐÐ§£¬Ê±ÖÓ8·ÖÆµ
+ 372   1          PWM0PH = 0x03;             // ÖÜÆÚ¸ß4Î»ÉèÖÃÎª0x03
+ 373   1          PWM0PL = 0xFF;             // ÖÜÆÚµÍ8Î»ÉèÖÃÎª0xFF
+ 374   1          PWM0DH = 0x01;             // PWM0¸ß4Î»Õ¼¿Õ±È0x01
+ 375   1          PWM0DL = 0x55;             // PWM0µÍ8Î»Õ¼¿Õ±È0x55
+ 376   1          PWM0EN = 0x0B; // Ê¹ÄÜPWM0£¬¹¤×÷ÓÚ¶ÀÁ¢Ä£Ê½ PWM0Êä³ö PWM01¹Ø±Õ 0000 1011
+ 377   1      
+ 378   1          /************************************* Ö¸¶¨²¨ÐÎ
+ 379   1           * ****************************************/
+ 380   1          P0M0 = P0M0 & 0x0F | 0x80; //       P01ÉèÖÃÎªÍÆÍêÊä³ö
+ 381   1      }
+ 382          
+ 383          /***************************************************************************************
+ 384           * @ËµÃ÷        ³õÊ¼»¯¹Ü½ÅÎªÍÆÍìÊä³ö
+ 385           * @²ÎÊý        IOPPx £ºÄÄÒ»×éIO
+ 386           *      @²ÎÊý   IOPPXx£ºÄ³Ò»¸öµÄÄÄÒ»¸öIO
+ 387           * @·µ»ØÖµ ÎÞ
+ 388           * @×¢            ÎÞ
+ 389           ***************************************************************************************/
+ 390          
+ 391          void IOInitPushpull(unsigned char IOPPx, unsigned char IOPPXx) {
+ 392   1          // ³õÊ¼»¯¹Ü½Å
+ 393   1          switch (IOPPx) {
+ 394   2              // P2
+ 395   2          case 0x02:
+ 396   2              switch (IOPPXx / 2) {
+ 397   3                  // P20 P21
+ 398   3              case 0:(IOPPXx % 2) ? (P2M0 = P2M0 & 0x0F | 0x80) : (P2M0 = P2M0 & 0xF0 | 0x08);break;
+ 399   3      
+ 400   3                  // P23 P22
+ 401   3              case 1:(IOPPXx % 2) ? (P2M1 = P2M1 & 0x0F | 0x80) : (P2M1 = P2M1 & 0xF0 | 0x08);break;
+ 402   3      
+ 403   3                  // P25 P24
+ 404   3              case 2:(IOPPXx % 2) ? (P2M2 = P2M2 & 0x0F | 0x80) : (P2M2 = P2M2 & 0xF0 | 0x08);break;
+ 405   3      
+ 406   3              case 3:(IOPPXx % 2) ? (P2M3 = P2M3 & 0x0F | 0x80) : (P2M3 = P2M3 & 0xF0 | 0x08);break;
+ 407   3      
+ 408   3              default:  break;
+ 409   3              }
+ 410   2              break;
+ 411   2      
+ 412   2              // P0
+ 413   2          case 0x00:
+ 414   2              switch (IOPPXx / 2) {
+ 415   3                  // P00 P01
+ 416   3              case 0:(IOPPXx % 2) ? (P0M0 = P0M0 & 0x0F | 0x80) : (P0M0 = P0M0 & 0xF0 | 0x08);break;
+ 417   3      
+ 418   3                  // P03 P02
+ 419   3              case 1:(IOPPXx % 2) ? (P0M1 = P0M1 & 0x0F | 0x80) : (P0M1 = P0M1 & 0xF0 | 0x08);break;
+C51 COMPILER V9.60.7.0   MAIN                                                              07/22/2023 17:30:50 PAGE 8   
+
+ 420   3      
+ 421   3                  // P05 P04
+ 422   3              case 2:(IOPPXx % 2) ? (P0M2 = P0M2 & 0x0F | 0x80) : (P0M2 = P0M2 & 0xF0 | 0x08);break;
+ 423   3      
+ 424   3              case 3: (IOPPXx % 2) ? (P0M3 = P0M3 & 0x0F | 0x80) : (P0M3 = P0M3 & 0xF0 | 0x08);break;
+ 425   3      
+ 426   3              default:  break;
+ 427   3              }
+ 428   2              break;
+ 429   2      
+ 430   2          default:
+ 431   2              break;
+ 432   2          }
+ 433   1      }
+ 434          
+ 435          /***************************************************************************************
+ 436           * @ËµÃ÷        ADCÖÐ¶Ï·þÎñº¯Êý
+ 437           *      @²ÎÊý     ÎÞ
+ 438           * @·µ»ØÖµ ÎÞ
+ 439           * @×¢            ÎÞ
+ 440           ***************************************************************************************/
+ 441          void ADC_Rpt() interrupt ADC_VECTOR {
+ 442   1          // ¶ÁÈ¡ÊýÖµ
+ 443   1          ADCC0 &= ~0x20; // Çå³ýADCÖÐ¶Ï±êÖ¾Î»
+ 444   1      
+ 445   1          gui_AdcValue_a[guc_Channel_Count] = ADCR; // »ñÈ¡ADCÊý¾Ý
+ 446   1      
+ 447   1          guc_Channel_Count++;
+ 448   1          if (guc_Channel_Count == 4) {
+ 449   2              guc_Count++;
+ 450   2              guc_Channel_Count = 0;
+ 451   2              if (guc_Count == 64) {
+ 452   3                  guc_Count = 0;
+ 453   3              }
+ 454   2          }
+ 455   1      
+ 456   1          // ÇÐ»»Í¨µÀ
+ 457   1          ADCC1 = (ADCC1 & (~0x07)) | (guc_AdcChannel_a[guc_Channel_Count]); // Ñ¡ÔñÍâ²¿Í¨µÀ
+ 458   1          //    Delay_2us(10);                                                      //
+ 459   1          //    ÇÐ»»Í¨µÀºó½¨ÒéÑÓÊ±20us
+ 460   1      }
+ 461          
+ 462          /***************************************************************************************
+ 463           * @ËµÃ÷        T0ÖÐ¶Ï·þÎñº¯Êý
+ 464           *      @²ÎÊý     ÎÞ
+ 465           * @·µ»ØÖµ ÎÞ
+ 466           * @×¢            ÎÞ
+ 467           ***************************************************************************************/
+ 468          void TIMER0_Rpt(void) interrupt TIMER0_VECTOR // 1ms
+ 469          {
+ 470   1          // ´®¿Ú³¬Ê±ÅÐ¶Ï
+ 471   1          timer_periodic_refresh();
+ 472   1      
+ 473   1          // Æô¶¯×ª»»
+ 474   1          ADCC0 |= 0x40; // Æô¶¯ÏÂÒ»´Î×ª»»
+ 475   1      
+ 476   1          // PWM¹¤×÷ÖÜÆÚÉèÖÃ
+ 477   1          PWMOut_count++;
+ 478   1          if (PWMOut_count > PWMWorkTime) {
+ 479   2              PWM0EN &= ~0x01; // ¹Ø±ÕPWMÄ£¿é
+ 480   2          }
+ 481   1      
+C51 COMPILER V9.60.7.0   MAIN                                                              07/22/2023 17:30:50 PAGE 9   
+
+ 482   1          if (PWMOut_count >= PWMOutCycle) {
+ 483   2              PWMOut_count = 0;
+ 484   2              PWM0EN |= 0x01; // ´ò¿ªPWMÄ£¿é
+ 485   2          }
+ 486   1      }
+ 487          
+ 488          /**
+ 489           * @ËµÃ÷        ÑÓÊ±º¯Êý
+ 490           * @²ÎÊý        fui_i : ÑÓÊ±Ê±¼ä
+ 491           * @·µ»ØÖµ ÎÞ
+ 492           * @×¢  Fcpu = 16MHz,fui_i = 1Ê±,ÑÓÊ±Ê±¼äÔ¼Îª2us
+ 493           */
+ 494          void Delay_2us(unsigned int fui_i) {
+ 495   1          while (fui_i--)
+ 496   1              ;
+ 497   1      }
+ 498          
+ 499          
+ 500          /***************************************************************************************
+ 501           * @ËµÃ÷        UART1ÖÐ¶Ï·þÎñº¯Êý
+ 502           *      @²ÎÊý     ÎÞ
+ 503           * @·µ»ØÖµ ÎÞ
+ 504           * @×¢            ÎÞ
+ 505           ***************************************************************************************/
+ 506          void UART1_Rpt(void) interrupt UART1_VECTOR {
+ 507   1          static unsigned char UartsdfCnt = 0, UsartRecflg = 0,temp = 0;
+ 508   1      
+ 509   1          /* ´®¿Ú½ÓÊÜÖÐ¶Ï */
+ 510   1          if (SCON & 0x01) // ÅÐ¶Ï½ÓÊÕÖÐ¶Ï±êÖ¾Î»
+ 511   1          {
+ 512   2              reload_timer(&usart1_timer,50); // ÈôÓÐ×Ö·ûÊÕµ½£¬×°³õÖµ²¢Æô¶¯¶¨Ê±Æ÷£¬Èô×Ö½Ú³¬Ê±£¬Ôò»á×Ô¶¯µ÷ÓÃ¶¨Ê±Æ
+             -÷³¬Ê±º¯Êý,³¬Ê±ÉèÎª50ms
+ 513   2              start_timer(&usart1_timer);
+ 514   2      
+ 515   2              if (UsartRecflg) // ¿ªÊ¼½ÓÊÕÊý¾Ý
+ 516   2              {
+ 517   3                  Uart1_rec.guc_Uartbuf_temp[Uart1_rec.guc_Uartcnt++] = SBUF; // ×ª´æ8Î»´®¿Ú½ÓÊÕÊý¾Ý
+ 518   3              }
+ 519   2      
+ 520   2              // Ö¡Í·
+ 521   2              if (SBUF == 0xff) // ÅÐ¶ÏÓÐÃ»ÓÐ¿ÉÄÜÊÇÖ¡Í·
+ 522   2              {
+ 523   3                  UartsdfCnt++;
+ 524   3              } else {
+ 525   3                  UartsdfCnt = 0;
+ 526   3              }
+ 527   2      
+ 528   2              if (UartsdfCnt == 2) // ½ÓÊÕµ½Ö¡Í·(2¸ö0xff),¿ªÊ¼½ÓÊÕÊý¾Ý
+ 529   2              {
+ 530   3                  UsartRecflg = 1;
+ 531   3      
+ 532   3                  Uart1_rec.guc_Uartcnt = 0; // ¿ªÊ¼½ÓÊÕÊý¾Ý£¬ÇåÁã¼ÆÊý
+ 533   3      
+ 534   3                  // Çå¿Õ´®¿Ú½ÓÊÕ»º´æ
+ 535   3                  memcpy(Uart1_rec.guc_Uartbuf_temp, 0, 20);
+ 536   3              }
+ 537   2      
+ 538   2      
+ 539   2              // ½ÓÊÕµÄÊý¾ÝÌ«¶à
+ 540   2              if (Uart1_rec.guc_Uartcnt >= 20) 
+ 541   2              {
+ 542   3      //            SCON &= ~0x10;  // Ê§ÄÜUART1½ÓÊÕ
+C51 COMPILER V9.60.7.0   MAIN                                                              07/22/2023 17:30:50 PAGE 10  
+
+ 543   3                  Uart1_rec.guc_Uartflag = 1;
+ 544   3                  memcpy(Uart1_rec.guc_Uartbuf_a, 0, 20);
+ 545   3                  memcpy(Uart1_rec.guc_Uartbuf_a, Uart1_rec.guc_Uartbuf_temp,Uart1_rec.guc_Uartcnt);
+ 546   3              }
+ 547   2      
+ 548   2              SCON &= ~0x01; // Çå³ý½ÓÊÕÖÐ¶Ï±êÖ¾Î»
+ 549   2          }
+ 550   1      
+ 551   1          
+ 552   1          /* ´®¿Ú·¢ËÍÖÐ¶Ï */
+ 553   1          if (SCON & 0x02) // ÅÐ¶Ï·¢ËÍÖÐ¶Ï±êÖ¾Î»
+ 554   1          {
+ 555   2              if (ringBuff.Lenght) //»º´æÇøÓÐÊý¾Ý 
+ 556   2              {
+ 557   3                  if (Read_RingBuff(&temp,&ringBuff))
+ 558   3                  {
+ 559   4                      SBUF = temp;
+ 560   4                  }
+ 561   3              }
+ 562   2              else //»º´æÇøÃ»ÓÐÊý¾Ý
+ 563   2              {
+ 564   3                  ringBuff.FlagByte |= 0x01;    //´®¿Ú¿ÕÏÐ 
+ 565   3              }
+ 566   2              
+ 567   2              SCON &= ~0x02; // Çå³ý·¢ËÍÖÐ¶Ï±êÖ¾Î»
+ 568   2          }
+ 569   1      }
+ 570          
+ 571          /***************************************************************************************
+ 572           * @ËµÃ÷        ´®¿Ú1¶¨Ê±Æ÷×Ö½Ú³¬Ê±´¦Àí
+ 573           *      @²ÎÊý   ÎÞ
+ 574           * @·µ»ØÖµ ÎÞ
+ 575           * @×¢          ÎÞ
+ 576           ***************************************************************************************/
+ 577          void usart1_timeover_proc(void) 
+ 578          {
+ 579   1          memcpy(Uart1_rec.guc_Uartbuf_a, 0, 20);
+ 580   1          memcpy(Uart1_rec.guc_Uartbuf_a, Uart1_rec.guc_Uartbuf_temp,Uart1_rec.guc_Uartcnt); //±£´æ½ÓÊÕµ½µÄÊý¾Ý
+ 581   1      
+ 582   1          Uart1_rec.guc_Uartflag = 1;
+ 583   1      }
+ 584          
+ 585          /**
+ 586           * @ËµÃ÷        Ð´ÈëÒ»¸ö×Ö½ÚÊý¾Ýµ½FlashÀïÃæ
+ 587           * @²ÎÊý        fui_Address £ºFLASHµØÖ·
+ 588           *      @²ÎÊý   fucp_SaveData£ºÐ´ÈëµÄÊý¾Ý´æ·ÅÇøÓòµÄÊ×µØÖ·
+ 589           * @·µ»ØÖµ ÎÞ
+ 590           * @×¢          Ð´Ö®Ç°±ØÐëÏÈ¶Ô²Ù×÷µÄÉÈÇø½øÐÐ²Á³ý
+ 591           */
+ 592          #pragma disable // È·±£µ÷ÕûÊ±²»»á½øÖÐ¶Ïµ¼ÖÂµ÷ÕûÊ§°Ü
+ 593          void FLASH_WriteData(unsigned char fuc_SaveData, unsigned int fui_Address) {
+ 594   1          IAP_DATA = fuc_SaveData;
+ 595   1          IAP_CMD = 0xF00F; // Flash½âËø
+ 596   1          IAP_ADDR = fui_Address;
+ 597   1          IAP_CMD = 0xB44B; // ×Ö½Ú±à³Ì
+ 598   1          IAP_CMD = 0xE11E; // ´¥·¢Ò»´Î²Ù×÷
+ 599   1      }
+ 600          
+ 601          /**
+ 602           * @ËµÃ÷        Ð´ÈëÈÎÒâ³¤¶ÈµÄÊý¾Ýµ½FLASHÀïÃæ
+ 603           * @²ÎÊý        fui_Address £ºFLASHÆðÊ¼µØÖ·
+ 604           *      @²ÎÊý   fuc_Length £º Ð´ÈëÊý¾Ý³¤¶È
+C51 COMPILER V9.60.7.0   MAIN                                                              07/22/2023 17:30:50 PAGE 11  
+
+ 605           *                          È¡Öµ·¶Î§£º0x00-0xFF
+ 606           *      @²ÎÊý    *fucp_SaveArr£ºÐ´ÈëµÄÊý¾Ý´æ·ÅÇøÓòµÄÊ×µØÖ·
+ 607           * @·µ»ØÖµ ÎÞ
+ 608           * @×¢            Ð´Ö®Ç°±ØÐëÏÈ¶Ô²Ù×÷µÄÉÈÇø½øÐÐ²Á³ý
+ 609           */
+ 610          #pragma disable // È·±£µ÷ÕûÊ±²»»á½øÖÐ¶Ïµ¼ÖÂµ÷ÕûÊ§°Ü
+ 611          void Flash_WriteArr(unsigned int fui_Address, unsigned char fuc_Length,
+ 612                              unsigned char *fucp_SaveArr) {
+ 613   1          unsigned char fui_i = 0;
+ 614   1          for (fui_i = 0; fui_i < fuc_Length; fui_i++) {
+ 615   2              FLASH_WriteData(*(fucp_SaveArr++), fui_Address++);
+ 616   2          }
+ 617   1      }
+ 618          
+ 619          /**
+ 620           * @ËµÃ÷        ´ÓFLASHÀïÃæ¶ÁÈ¡ÈÎÒâ³¤¶ÈµÄÊý¾Ý
+ 621           * @²ÎÊý        fui_Address £ºFLASHÆðÊ¼µØÖ·
+ 622           * @²ÎÊý          fuc_Length £º¶ÁÈ¡Êý¾Ý³¤¶È
+ 623           *                          È¡Öµ·¶Î§£º0x00-0xFF
+ 624           * @²ÎÊý         *fucp_SaveArr£º¶ÁÈ¡Êý¾Ý´æ·ÅµÄÇøÓòÊ×µØÖ·
+ 625           * @·µ»ØÖµ ÎÞ
+ 626           * @×¢            ÎÞ
+ 627           */
+ 628          void Flash_ReadArr(unsigned int fui_Address, unsigned char fuc_Length,
+ 629                             unsigned char *fucp_SaveArr) {
+ 630   1          while (fuc_Length--)
+ 631   1              *(fucp_SaveArr++) = *((unsigned char code *)(fui_Address++)); // ¶ÁÈ¡Êý¾Ý
+ 632   1      }
+ 633          
+ 634          /**
+ 635           * @ËµÃ÷        ÉÈÇø²Á³ý£¬Ô¼ÏûºÄ5msµÄÊ±¼ä
+ 636           * @²ÎÊý        fui_Address £º±»²Á³ýµÄÉÈÇøÄÚµÄÈÎÒâÒ»¸öµØÖ·
+ 637           * @·µ»ØÖµ ÎÞ
+ 638           * @×¢            Ö»Òª²Ù×÷ÉÈÇøÀïÃæµÄÈÎÒâÒ»¸öµØÖ·£¬¾Í¿ÉÒÔ²Á³ý´ËÉÈÇø
+ 639           */
+ 640          #pragma disable // È·±£µ÷ÕûÊ±²»»á½øÖÐ¶Ïµ¼ÖÂµ÷ÕûÊ§°Ü
+ 641          void Flash_EraseBlock(unsigned int fui_Address) {
+ 642   1          IAP_CMD = 0xF00F;       // Flash½âËø
+ 643   1          IAP_ADDR = fui_Address; // Ð´Èë²Á³ýµØÖ·
+ 644   1          IAP_CMD = 0xD22D;       // Ñ¡Ôñ²Ù×÷·½Ê½£¬ ÉÈÇø²Á³ý
+ 645   1          IAP_CMD = 0xE11E; // ´¥·¢ºóIAP_ADDRL&IAP_ADDRHÖ¸Ïò0xFF£¬Í¬Ê±×Ô¶¯Ëø¶¨
+ 646   1      }
+ 647          
+ 648          /***************************************************************************************
+ 649           * @ËµÃ÷        T1ÖÐ¶Ï·þÎñº¯Êý
+ 650           *      @²ÎÊý     ÎÞ
+ 651           * @·µ»ØÖµ ÎÞ
+ 652           * @×¢            ÎÞ
+ 653           ***************************************************************************************/
+ 654          void TIMER1_Rpt(void) interrupt TIMER1_VECTOR // 25msÖÐ¶Ï
+ 655          {
+ 656   1          static unsigned int count = 0;
+ 657   1          count++;
+ 658   1          if (count >= 4) {
+ 659   2              count = 0;
+ 660   2              // Êä³öÖ¸¶¨²¨ÐÎ
+ 661   2              switch (SpecifywaveIOflag) {
+ 662   3                  // P01
+ 663   3              case 0:
+ 664   3                  P0_1 = SpecifywaveformOut[SpecifywaveCount];
+ 665   3                  break;
+ 666   3      
+C51 COMPILER V9.60.7.0   MAIN                                                              07/22/2023 17:30:50 PAGE 12  
+
+ 667   3                  // P05
+ 668   3              case 1:
+ 669   3                  P0_5 = SpecifywaveformOut[SpecifywaveCount];
+ 670   3                  break;
+ 671   3      
+ 672   3                  // P07
+ 673   3              case 2:
+ 674   3                  P0_7 = SpecifywaveformOut[SpecifywaveCount];
+ 675   3                  break;
+ 676   3      
+ 677   3              default:
+ 678   3                  break;
+ 679   3              }
+ 680   2              SpecifywaveCount++;
+ 681   2              if (SpecifywaveCount > 14)
+ 682   2                  SpecifywaveCount = 0;
+ 683   2          }
+ 684   1      }
+ 685          
+ 686          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   2869    ----
+   CONSTANT SIZE    =    298    ----
+   XDATA SIZE       =    300      28
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,1 @@
+"..\HAEDWARE\uart\uart.c" LARGE OPTIMIZE (8,SPEED) BROWSE INCDIR(..\HAEDWARE\soft_timer;..\HAEDWARE\uart) DEBUG OBJECTEXTEND PRINT(.\Listings\uart.lst) OBJECT(.\Objects\uart.obj)
