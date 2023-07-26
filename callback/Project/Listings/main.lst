@@ -1,4 +1,4 @@
-C51 COMPILER V9.60.7.0   MAIN                                                              07/24/2023 16:59:30 PAGE 1   
+C51 COMPILER V9.60.7.0   MAIN                                                              07/26/2023 11:44:03 PAGE 1   
 
 
 C51 COMPILER V9.60.7.0, COMPILATION OF MODULE MAIN
@@ -62,7 +62,7 @@ line level    source
   52   3                  //将数据写入发送缓冲区
   53   3                  WriteStr_RingBuff(guc_Uartbuf_p,&ringBuff);
   54   3                  
-C51 COMPILER V9.60.7.0   MAIN                                                              07/24/2023 16:59:30 PAGE 2   
+C51 COMPILER V9.60.7.0   MAIN                                                              07/26/2023 11:44:03 PAGE 2   
 
   55   3                  
   56   3                  /* 启动串口发送 */
@@ -126,7 +126,7 @@ line level    source
  114   1          TCON |= 0x40;  // 使能T1
  115   1      
  116   1          /************************************ADC初始化*****************************************/
-C51 COMPILER V9.60.7.0   MAIN                                                              07/24/2023 16:59:30 PAGE 3   
+C51 COMPILER V9.60.7.0   MAIN                                                              07/26/2023 11:44:03 PAGE 3   
 
  117   1          P0M0 = P0M0 & 0xF0 | 0x03;  // P00设置为模拟输入
  118   1          P0M1 = P0M1 & 0xF0 | 0x03;  // P02设置为模拟输入
@@ -190,7 +190,7 @@ line level    source
  176   1      }
  177          
  178          /***************************************************************************************
-C51 COMPILER V9.60.7.0   MAIN                                                              07/24/2023 16:59:30 PAGE 4   
+C51 COMPILER V9.60.7.0   MAIN                                                              07/26/2023 11:44:03 PAGE 4   
 
  179           * @说明        初始化管脚为推挽输出
  180           * @参数        IOPPx ：哪一组IO
@@ -254,7 +254,7 @@ line level    source
  238   3              case 3:
  239   3                  (IOPPXx % 2) ? ( P0M3 = P0M3 & 0x0F | 0x80):(P0M3 = P0M3 & 0xF0 | 0x08);
  240   3                  break;
-C51 COMPILER V9.60.7.0   MAIN                                                              07/24/2023 16:59:30 PAGE 5   
+C51 COMPILER V9.60.7.0   MAIN                                                              07/26/2023 11:44:03 PAGE 5   
 
  241   3      
  242   3              default:
@@ -318,7 +318,7 @@ line level    source
  300   2              PWMOut_count = 0;
  301   2              PWM0EN |= 0x01;  // 打开PWM模块
  302   2          }
-C51 COMPILER V9.60.7.0   MAIN                                                              07/24/2023 16:59:30 PAGE 6   
+C51 COMPILER V9.60.7.0   MAIN                                                              07/26/2023 11:44:03 PAGE 6   
 
  303   1      }
  304          
@@ -382,7 +382,7 @@ line level    source
  361   3                  memcpy(Uart1_rec.guc_Uartbuf_a, 0, 20);
  362   3                  memcpy(Uart1_rec.guc_Uartbuf_a, Uart1_rec.guc_Uartbuf_temp,Uart1_rec.guc_Uartcnt);
  363   3                  Uart1_rec.guc_Uartcnt  = 0;
-C51 COMPILER V9.60.7.0   MAIN                                                              07/24/2023 16:59:30 PAGE 7   
+C51 COMPILER V9.60.7.0   MAIN                                                              07/26/2023 11:44:03 PAGE 7   
 
  364   3              }
  365   2      
@@ -446,7 +446,7 @@ line level    source
  423           * @参数        fui_Address ：FLASH起始地址
  424           *      @参数   fuc_Length ： 写入数据长度
  425           *                          取值范围：0x00-0xFF
-C51 COMPILER V9.60.7.0   MAIN                                                              07/24/2023 16:59:30 PAGE 8   
+C51 COMPILER V9.60.7.0   MAIN                                                              07/26/2023 11:44:03 PAGE 8   
 
  426           *      @参数    *fucp_SaveArr：写入的数据存放区域的首地址
  427           * @返回值 无
@@ -510,7 +510,7 @@ line level    source
  485   3                  case 0:P0_1 = SpecifywaveformOut[SpecifywaveCount];break;
  486   3      
  487   3                  // P05
-C51 COMPILER V9.60.7.0   MAIN                                                              07/24/2023 16:59:30 PAGE 9   
+C51 COMPILER V9.60.7.0   MAIN                                                              07/26/2023 11:44:03 PAGE 9   
 
  488   3                  case 1:P0_5 = SpecifywaveformOut[SpecifywaveCount];break;
  489   3      
@@ -574,7 +574,7 @@ line level    source
  547   1          
  548   1      //    sprintf(guc_Uartbuf_p,"功能1\r\n");
  549   1      }
-C51 COMPILER V9.60.7.0   MAIN                                                              07/24/2023 16:59:30 PAGE 10  
+C51 COMPILER V9.60.7.0   MAIN                                                              07/26/2023 11:44:03 PAGE 10  
 
  550          
  551          
@@ -638,7 +638,7 @@ line level    source
  607   2          }
  608   1      
  609   1      
-C51 COMPILER V9.60.7.0   MAIN                                                              07/24/2023 16:59:30 PAGE 11  
+C51 COMPILER V9.60.7.0   MAIN                                                              07/26/2023 11:44:03 PAGE 11  
 
  610   1          if (IOPP.half.low != 0x02) 
  611   1          {
@@ -702,7 +702,7 @@ line level    source
  668           * @返回值  无
  669           * @注      无
  670           ***************************************************************************************/
-C51 COMPILER V9.60.7.0   MAIN                                                              07/24/2023 16:59:30 PAGE 12  
+C51 COMPILER V9.60.7.0   MAIN                                                              07/26/2023 11:44:03 PAGE 12  
 
  671          /*********************** 4 指定PWM输出周期和工作时间 ***********************/
  672          // 缓存区数据：0x04，产生周期（2个字节），工作时间（2个字节）
